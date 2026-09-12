@@ -27,14 +27,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 </script>
 <style>
   :root {
-    --paper: #EFE8D6;
-    --paper-deep: #E4DCC5;
-    --ink: #26221B;
-    --ink-soft: #5B5546;
-    --stamp: #8C3B2E;
-    --stamp-soft: #C8574433;
-    --line: #C9BE9D;
-    --ok: #3F6B4A;
+    --paper: #F7ECE6;
+    --paper-deep: #EEDBD0;
+    --ink: #2B1913;
+    --ink-soft: #7A5C50;
+    --mela: #D06857;
+    --paprika: #D02E29;
+    --blend: #D04B40;
+    --blend-soft: #D04B4026;
+    --yellow: #F9DC52;
+    --line: #DDC5B7;
+    --ok: #3B873D;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -68,7 +71,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   h1 em {
     font-style: italic;
-    color: var(--stamp);
+    color: var(--paprika);
+  }
+  h1 .mela-word {
+    color: var(--mela);
   }
   p.lede {
     color: var(--ink-soft);
@@ -88,8 +94,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     transition: border-color 0.15s ease, background 0.15s ease;
   }
   .dropzone.drag {
-    border-color: var(--stamp);
-    background: var(--stamp-soft);
+    border-color: var(--blend);
+    background: var(--blend-soft);
   }
   .dropzone input { display: none; }
   .dropzone .verb {
@@ -102,15 +108,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     font-family: "Courier New", ui-monospace, monospace;
   }
   .stamp-mark {
-    display: inline-block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 46px;
     height: 46px;
-    border: 2px solid var(--stamp);
     border-radius: 50%;
-    color: var(--stamp);
-    line-height: 42px;
+    background: linear-gradient(135deg, var(--mela) 0%, var(--mela) 45%, var(--paprika) 55%, var(--paprika) 100%);
+    color: var(--paper);
     font-size: 20px;
-    margin-bottom: 14px;
+    margin: 0 auto 14px;
     transform: rotate(-6deg);
   }
   #status {
@@ -119,7 +126,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .recipe-row {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     padding: 9px 0;
     border-bottom: 1px solid var(--line);
     font-size: 15px;
@@ -129,8 +136,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   .recipe-row .cat {
     font-family: "Courier New", ui-monospace, monospace;
-    font-size: 12px;
-    color: var(--ink-soft);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    background: var(--yellow);
+    padding: 3px 9px;
+    border-radius: 9px;
+  }
+  .recipe-row .cat:empty {
+    display: none;
   }
   .result {
     margin-top: 24px;
@@ -142,7 +157,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   .result p { margin: 0 0 14px; font-size: 15px; }
   .download-btn {
     display: inline-block;
-    background: var(--stamp);
+    background: var(--paprika);
     color: var(--paper);
     text-decoration: none;
     font-family: "Courier New", ui-monospace, monospace;
@@ -157,7 +172,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     margin-top: 24px;
     padding: 16px 20px;
     background: #F1DCD6;
-    border-left: 4px solid var(--stamp);
+    border-left: 4px solid var(--blend);
     font-size: 14px;
     border-radius: 2px;
   }
@@ -183,12 +198,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     margin-top: 18px;
     font-size: 13px;
   }
+  .version-stamp {
+    display: inline-block;
+    margin-top: 32px;
+    padding: 5px 14px;
+    border: 1.5px dashed var(--line);
+    border-radius: 2px;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--ink-soft);
+    transform: rotate(-1.5deg);
+  }
 </style>
 </head>
 <body>
 <main>
   <div class="card-index">recipe card · file conversion</div>
-  <h1>Mela to <em>Paprika</em></h1>
+  <h1><span class="mela-word">Mela</span> to <em>Paprika</em></h1>
   <p class="lede">Drop a recipe export from Mela below. It's converted right here on your device — nothing is uploaded anywhere — and you'll get a file back that Paprika can import.</p>
 
   <div class="dropzone" id="dropzone">
@@ -210,6 +236,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     </ol>
     <p class="foot-note">This page keeps working even if you lose signal after it first loads — the conversion runs entirely in Safari.</p>
   </div>
+
+  <div class="version-stamp">v1.2 · 2026-09-12</div>
 </main>
 
 <script>
@@ -388,7 +416,7 @@ async function handleFile(file) {
     const blob = zipBytes;
     const outName = converted.length === 1
       ? `${converted[0].filename.replace(/\.paprikarecipe$/, '')}.paprikarecipes`
-      : file.name.replace(/\.melarecipes?$/i, '') + '.paprikarecipes';
+      : safeFilename(file.name.replace(/\.melarecipes?$/i, '')) + '.paprikarecipes';
 
     const url = URL.createObjectURL(blob);
     const rows = converted.map(c =>
@@ -399,7 +427,7 @@ async function handleFile(file) {
       ${rows}
       <div class="result">
         <p>${converted.length} recipe${converted.length === 1 ? '' : 's'} converted and ready.</p>
-        <a class="download-btn" href="${url}" download="${outName}">Download ${escapeHtml(outName)}</a>
+        <a class="download-btn" href="${url}" download="${escapeHtml(outName)}">Download ${escapeHtml(outName)}</a>
       </div>
     `;
   } catch (err) {
