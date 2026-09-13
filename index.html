@@ -437,6 +437,12 @@ async function melaToPaprika(mela) {
   return paprika;
 }
 
+// Each record exposes `rawText()` instead of already-parsed data. A
+// .melarecipes batch can be thousands of recipes with several MB of
+// embedded base64 photo data apiece — decompressing and JSON.parse-ing
+// every one of them up front (just to read a date) would mean holding
+// all of that in memory simultaneously. Parsing lazily, one at a time,
+// keeps peak memory down to roughly one recipe's worth.
 async function loadMelaRecords(file) {
   const name = file.name.toLowerCase();
   if (name.endsWith('.melarecipes')) {
@@ -444,14 +450,14 @@ async function loadMelaRecords(file) {
     const records = [];
     for (const entryName of Object.keys(zip.files)) {
       if (entryName.toLowerCase().endsWith('.melarecipe')) {
-        const text = await zip.files[entryName].async('string');
-        records.push({ stem: entryName.replace(/\.melarecipe$/i, ''), data: JSON.parse(text) });
+        const entry = zip.files[entryName];
+        records.push({ stem: entryName.replace(/\.melarecipe$/i, ''), rawText: () => entry.async('string') });
       }
     }
     return records;
   } else if (name.endsWith('.melarecipe')) {
     const text = await file.text();
-    return [{ stem: file.name.replace(/\.melarecipe$/i, ''), data: JSON.parse(text) }];
+    return [{ stem: file.name.replace(/\.melarecipe$/i, ''), rawText: async () => text }];
   }
   throw new Error("That doesn't look like a .melarecipe or .melarecipes file.");
 }
@@ -462,10 +468,16 @@ async function handleFile(file) {
     const records = await loadMelaRecords(file);
     if (!records.length) throw new Error('No recipes were found inside that file.');
 
-    const dated = records.map(r => ({ ...r, dateMs: decodeMelaDate(r.data.date) }));
+    if (records.length === 1) {
+      await convertAndShow(file, records);
+      return;
+    }
+
+    const dated = [];
+    for (const r of records) dated.push({ ...r, dateMs: await peekDate(r) });
     const hasUsableDates = dated.some(r => r.dateMs !== null);
 
-    if (dated.length > 1 && hasUsableDates) {
+    if (hasUsableDates) {
       renderDateFilter(file, dated);
     } else {
       await convertAndShow(file, dated);
@@ -483,6 +495,16 @@ function decodeMelaDate(value) {
   return typeof value === 'number' && Number.isFinite(value)
     ? MELA_EPOCH_MS + value * 1000
     : null;
+}
+
+// Pulls just the `date` field out of a record's raw JSON text with a
+// regex instead of JSON.parse-ing the whole thing — avoids building (and
+// retaining) the full object graph, photo data included, for recipes we
+// may only need a timestamp from.
+async function peekDate(record) {
+  const text = await record.rawText();
+  const match = text.match(/"date"\s*:\s*(-?\d+(?:\.\d+)?)/);
+  return match ? decodeMelaDate(parseFloat(match[1])) : null;
 }
 
 function selectByCutoff(records, cutoffMs) {
@@ -564,7 +586,8 @@ async function convertAndShow(file, records) {
     if (!records.length) throw new Error('No recipes match that date — nothing to convert.');
 
     const converted = [];
-    for (const { stem, data } of records) {
+    for (const { stem, rawText } of records) {
+      const data = JSON.parse(await rawText());
       const paprika = await melaToPaprika(data);
       const raw = JSON.stringify(paprika);
       const gz = pako.gzip(raw);
