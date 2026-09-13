@@ -171,6 +171,42 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     cursor: pointer;
   }
   .download-btn:active { transform: translateY(1px); }
+  .download-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .date-filter {
+    margin-top: 26px;
+    padding: 20px;
+    background: var(--paper-deep);
+    border-left: 4px solid var(--blend);
+    border-radius: 2px;
+  }
+  .date-filter p { margin: 0 0 14px; font-size: 15px; }
+  .filter-label {
+    display: block;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+  }
+  .date-input {
+    display: block;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 14px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    background: var(--paper);
+    color: var(--ink);
+    margin-bottom: 14px;
+  }
+  .date-filter .match-count {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: 0 0 14px;
+  }
   .error {
     margin-top: 24px;
     padding: 16px 20px;
@@ -387,10 +423,76 @@ async function loadMelaRecords(file) {
 }
 
 async function handleFile(file) {
-  statusEl.innerHTML = '<p style="color: var(--ink-soft); font-size: 14px;">Converting…</p>';
+  statusEl.innerHTML = '<p style="color: var(--ink-soft); font-size: 14px;">Reading…</p>';
   try {
     const records = await loadMelaRecords(file);
     if (!records.length) throw new Error('No recipes were found inside that file.');
+
+    const dated = records.map(r => ({ ...r, dateMs: decodeMelaDate(r.data.date) }));
+    const hasUsableDates = dated.some(r => r.dateMs !== null);
+
+    if (dated.length > 1 && hasUsableDates) {
+      renderDateFilter(file, dated);
+    } else {
+      await convertAndShow(file, dated);
+    }
+  } catch (err) {
+    statusEl.innerHTML = `<div class="error">${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+// Mela stores `date` as a Cocoa/NSDate reference-date timestamp — seconds
+// since 2001-01-01T00:00:00Z, not the Unix epoch. Older exports may be
+// missing the field entirely.
+const MELA_EPOCH_MS = Date.UTC(2001, 0, 1);
+function decodeMelaDate(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? MELA_EPOCH_MS + value * 1000
+    : null;
+}
+
+function selectByCutoff(records, cutoffMs) {
+  return Number.isNaN(cutoffMs)
+    ? records.slice()
+    : records.filter(r => r.dateMs === null || r.dateMs >= cutoffMs);
+}
+
+function renderDateFilter(file, records) {
+  const withDates = records.filter(r => r.dateMs !== null);
+  const undatedCount = records.length - withDates.length;
+  const earliestMs = withDates.reduce((min, r) => Math.min(min, r.dateMs), Infinity);
+
+  statusEl.innerHTML = `
+    <div class="date-filter">
+      <p>This backup has <strong>${records.length}</strong> recipes${undatedCount ? ` (${undatedCount} with no date — always included)` : ''}.</p>
+      <label class="filter-label" for="cutoff">Only convert recipes added on or after</label>
+      <input type="date" id="cutoff" class="date-input" value="${new Date(earliestMs).toISOString().slice(0, 10)}">
+      <p class="match-count" id="matchCount"></p>
+      <button type="button" id="convertBtn" class="download-btn">Convert</button>
+    </div>
+  `;
+
+  const cutoffEl = document.getElementById('cutoff');
+  const matchCountEl = document.getElementById('matchCount');
+  const convertBtn = document.getElementById('convertBtn');
+
+  function refreshCount() {
+    const n = selectByCutoff(records, cutoffEl.valueAsNumber).length;
+    matchCountEl.textContent = `${n} of ${records.length} recipe${records.length === 1 ? '' : 's'} match.`;
+    convertBtn.disabled = n === 0;
+  }
+  cutoffEl.addEventListener('input', refreshCount);
+  refreshCount();
+
+  convertBtn.addEventListener('click', () => {
+    convertAndShow(file, selectByCutoff(records, cutoffEl.valueAsNumber));
+  });
+}
+
+async function convertAndShow(file, records) {
+  statusEl.innerHTML = '<p style="color: var(--ink-soft); font-size: 14px;">Converting…</p>';
+  try {
+    if (!records.length) throw new Error('No recipes match that date — nothing to convert.');
 
     const converted = [];
     for (const { stem, data } of records) {
