@@ -207,6 +207,40 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     color: var(--ink-soft);
     margin: 0 0 14px;
   }
+  .day-breakdown {
+    margin-bottom: 18px;
+  }
+  .day-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .day-row:last-child { border-bottom: none; }
+  .day-count {
+    font-family: "Courier New", ui-monospace, monospace;
+    font-weight: 700;
+    min-width: 4ch;
+    text-align: right;
+  }
+  .day-date {
+    font-family: "Courier New", ui-monospace, monospace;
+    color: var(--ink-soft);
+    flex: 1;
+  }
+  .day-use {
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 12px;
+    background: none;
+    border: none;
+    color: var(--paprika);
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+  }
+  .day-use:hover { color: var(--blend); }
   .error {
     margin-top: 24px;
     padding: 16px 20px;
@@ -457,14 +491,40 @@ function selectByCutoff(records, cutoffMs) {
     : records.filter(r => r.dateMs === null || r.dateMs >= cutoffMs);
 }
 
+// Counts recipes per calendar day (UTC), busiest day first. A bulk import
+// (e.g. an old migration from another app) tends to show up as one day
+// with far more recipes than any other — this surfaces that at a glance.
+function groupByDay(records) {
+  const counts = new Map();
+  for (const r of records) {
+    if (r.dateMs === null) continue;
+    const day = new Date(r.dateMs).toISOString().slice(0, 10);
+    counts.set(day, (counts.get(day) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+}
+
 function renderDateFilter(file, records) {
   const withDates = records.filter(r => r.dateMs !== null);
   const undatedCount = records.length - withDates.length;
   const earliestMs = withDates.reduce((min, r) => Math.min(min, r.dateMs), Infinity);
+  const topDays = groupByDay(records).slice(0, 5);
 
   statusEl.innerHTML = `
     <div class="date-filter">
       <p>This backup has <strong>${records.length}</strong> recipes${undatedCount ? ` (${undatedCount} with no date — always included)` : ''}.</p>
+      ${topDays.length > 1 ? `
+        <label class="filter-label">Busiest days in this batch</label>
+        <div class="day-breakdown">
+          ${topDays.map(([day, count]) => `
+            <div class="day-row">
+              <span class="day-count">${count}</span>
+              <span class="day-date">${day}</span>
+              <button type="button" class="day-use" data-day="${day}">use day after →</button>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
       <label class="filter-label" for="cutoff">Only convert recipes added on or after</label>
       <input type="date" id="cutoff" class="date-input" value="${new Date(earliestMs).toISOString().slice(0, 10)}">
       <p class="match-count" id="matchCount"></p>
@@ -483,6 +543,15 @@ function renderDateFilter(file, records) {
   }
   cutoffEl.addEventListener('input', refreshCount);
   refreshCount();
+
+  statusEl.querySelectorAll('.day-use').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dayAfter = new Date(`${btn.dataset.day}T00:00:00Z`);
+      dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+      cutoffEl.value = dayAfter.toISOString().slice(0, 10);
+      refreshCount();
+    });
+  });
 
   convertBtn.addEventListener('click', () => {
     convertAndShow(file, selectByCutoff(records, cutoffEl.valueAsNumber));
